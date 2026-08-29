@@ -58,6 +58,7 @@ pub enum DataKey {
     Ticket(u64),
     EventRevenue(Symbol),
     EventTokenRevenue(Symbol, Address),
+    SupportedToken(Address),
     EventStatus(Symbol),
     /// Map-based: Individual event-payment relationship
     EventPayment(Symbol, u64),
@@ -216,6 +217,24 @@ pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     env.storage()
         .persistent()
         .extend_ttl(&DataKey::AcceptedToken, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn add_supported_token(env: &Env, token: &soroban_sdk::Address) {
+    let key = DataKey::SupportedToken(token.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn is_supported_token(env: &Env, token: &soroban_sdk::Address) -> bool {
+    if let Ok(accepted) = get_accepted_token(env) {
+        if accepted == *token {
+            return true;
+        }
+    }
+    let key = DataKey::SupportedToken(token.clone());
+    env.storage().persistent().get(&key).unwrap_or(false)
 }
 
 pub fn get_event_contract(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {

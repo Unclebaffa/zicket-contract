@@ -714,6 +714,7 @@ fn test_revenue_split_settlement_ignores_non_payout_token_revenue() {
     let admin2 = Address::generate(&env);
     let other_token_contract = env.register_stellar_asset_contract_v2(admin2.clone());
     let other_token = other_token_contract.address();
+    client.add_supported_token(&admin, &other_token);
     let payer2 = Address::generate(&env);
     token::StellarAssetClient::new(&env, &other_token).mint(&payer2, &500_000_000);
     client.pay_for_ticket(

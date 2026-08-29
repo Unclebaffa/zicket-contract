@@ -338,8 +338,7 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         }
     }
 
-    let accepted_token = storage::get_accepted_token(&env)?;
-    if params.token_address != accepted_token {
+    if !storage::is_supported_token(&env, &params.token_address) {
         return Err(PaymentError::InvalidPayoutToken);
     }
 
@@ -653,6 +652,20 @@ impl PaymentsContract {
 
     pub fn get_accepted_token(env: Env) -> Result<Address, PaymentError> {
         storage::get_accepted_token(&env)
+    }
+
+    pub fn add_supported_token(
+        env: Env,
+        admin: Address,
+        token: Address,
+    ) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let current_admin = storage::get_admin(&env)?;
+        if current_admin != admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        storage::add_supported_token(&env, &token);
+        Ok(())
     }
 
     pub fn get_event_config(env: Env, event_id: Symbol) -> Result<EventConfig, PaymentError> {

@@ -62,6 +62,8 @@ fn test_multi_token_payments() {
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
 
+    client.add_supported_token(&admin, &token2);
+
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
     let payment_id1 = client.pay_for_ticket(
@@ -130,6 +132,8 @@ fn test_multi_token_refund_updates_only_the_paid_token_bucket() {
 
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
+
+    client.add_supported_token(&admin, &token2);
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
 
@@ -182,6 +186,8 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
 
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
+
+    client.add_supported_token(&admin, &token2);
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
 
