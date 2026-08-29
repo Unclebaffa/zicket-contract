@@ -5,10 +5,10 @@ use crate::types::{
 use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 /// TTL refresh threshold in ledgers (~30 days at 5s/ledger).
-const TTL_THRESHOLD: u32 = 518_400;
+pub const TTL_THRESHOLD: u32 = 518_400;
 /// TTL extension target in ledgers (~60 days at 5s/ledger), well within the
 /// network maximum of 3,110,400 ledgers.
-const TTL_BUMP: u32 = 1_036_800;
+pub const TTL_BUMP: u32 = 1_036_800;
 const CURRENT_VERSION: u32 = 1;
 /// Processed-nonce replay-protection entries: ~7-day/14-day ledger schedule.
 const NONCE_TTL_THRESHOLD: u32 = 120_960; // ~7 days at 5s/ledger

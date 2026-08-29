@@ -226,9 +226,6 @@ fn process_timed_out_disputes(env: &Env, event_id: &Symbol) -> Result<(), Paymen
 }
 
 fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
-    if let Some(EventStatus::Cancelled) = storage::get_event_status(env, event_id) {
-        return Ok(());
-    }
     process_timed_out_disputes(env, event_id)?;
 
     let tokens = storage::get_event_tokens(env, event_id);
@@ -339,6 +336,11 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         ) {
             return Err(PaymentError::EventNotActive);
         }
+    }
+
+    let accepted_token = storage::get_accepted_token(&env)?;
+    if params.token_address != accepted_token {
+        return Err(PaymentError::InvalidPayoutToken);
     }
 
     let contract_address = env.current_contract_address();
@@ -1702,27 +1704,21 @@ impl PaymentsContract {
                     total_payments += payment.amount;
                     total_refunds += payment.refunded_amount;
 
-                    // Add to EventTokenVolume
-                    let vol_key = crate::storage::DataKey::EventTokenVolume(
-                        event_id.clone(),
-                        payment.token.clone(),
+                    storage::add_total_token_volume(
+                        &env,
+                        &event_id,
+                        &payment.token,
+                        payment.amount,
                     );
-                    let mut current_vol: i128 =
-                        env.storage().persistent().get(&vol_key).unwrap_or(0);
-                    current_vol += payment.amount;
-                    env.storage().persistent().set(&vol_key, &current_vol);
+                    storage::add_event_token(&env, &event_id, &payment.token);
 
                     if payment.refunded_amount > 0 {
-                        let refund_key = crate::storage::DataKey::TotalTokenRefunds(
-                            event_id.clone(),
-                            payment.token.clone(),
+                        storage::add_total_token_refunds(
+                            &env,
+                            &event_id,
+                            &payment.token,
+                            payment.refunded_amount,
                         );
-                        let mut current_token_refunds: i128 =
-                            env.storage().persistent().get(&refund_key).unwrap_or(0);
-                        current_token_refunds += payment.refunded_amount;
-                        env.storage()
-                            .persistent()
-                            .set(&refund_key, &current_token_refunds);
                     }
                 }
             }
@@ -1732,12 +1728,21 @@ impl PaymentsContract {
         env.storage()
             .persistent()
             .set(&count_key, &(legacy_payments.len() as u64));
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 
         let tp_key = crate::storage::DataKey::TotalPayments(event_id.clone());
         env.storage().persistent().set(&tp_key, &total_payments);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tp_key, TTL_THRESHOLD, TTL_BUMP);
 
         let tr_key = crate::storage::DataKey::TotalRefunds(event_id.clone());
         env.storage().persistent().set(&tr_key, &total_refunds);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tr_key, TTL_THRESHOLD, TTL_BUMP);
 
         let history = storage::get_withdrawal_history(&env, &event_id);
         let mut total_withdrawn = 0;
@@ -1748,19 +1753,24 @@ impl PaymentsContract {
         }
         let tw_key = crate::storage::DataKey::TotalWithdrawn(event_id.clone());
         env.storage().persistent().set(&tw_key, &total_withdrawn);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tw_key, TTL_THRESHOLD, TTL_BUMP);
 
+        let tokens = storage::get_event_tokens(&env, &event_id);
         if total_withdrawn > 0 {
-            if let Ok(payout_token) = storage::get_event_payout_token(&env, &event_id) {
-                let tw_token_key =
-                    crate::storage::DataKey::TotalTokenWithdrawn(event_id.clone(), payout_token);
-                env.storage()
-                    .persistent()
-                    .set(&tw_token_key, &total_withdrawn);
+            if tokens.len() > 1 {
+                return Err(PaymentError::AccountingMismatch);
+            }
+            if let Some(single_token) = tokens.get(0) {
+                storage::add_total_token_withdrawn(&env, &event_id, &single_token, total_withdrawn);
             }
         }
 
         // Remove legacy vector to free space
         env.storage().persistent().remove(&legacy_key);
+
+        validate_revenue_invariant(&env, &event_id)?;
 
         Ok(())
     }
