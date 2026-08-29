@@ -231,29 +231,22 @@ fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), Paymen
     }
     process_timed_out_disputes(env, event_id)?;
 
-    let total_payments = storage::get_total_payments(env, event_id);
-    let total_refunds = storage::get_total_refunds(env, event_id);
-    let total_withdrawn = storage::get_total_withdrawn(env, event_id);
-    let platform_revenue = storage::get_platform_revenue(env, event_id);
+    let tokens = storage::get_event_tokens(env, event_id);
+    for i in 0..tokens.len() {
+        if let Some(token_address) = tokens.get(i) {
+            let total_payments = storage::get_total_token_volume(env, event_id, &token_address);
+            let total_refunds = storage::get_total_token_refunds(env, event_id, &token_address);
+            let total_withdrawn = storage::get_total_token_withdrawn(env, event_id, &token_address);
 
-    let mut total_disputed: i128 = 0;
-    let disputes = storage::get_event_disputes(env, event_id);
-    for i in 0..disputes.len() {
-        if let Some(ticket_id) = disputes.get(i) {
-            if let Some(dispute) = storage::get_dispute(env, ticket_id) {
-                if let Ok(payment) = storage::get_payment(env, dispute.payment_id) {
-                    total_disputed += payment.amount;
-                }
+            let expected_balance = total_payments - total_refunds - total_withdrawn;
+
+            let token_client = token::Client::new(env, &token_address);
+            let actual_balance = token_client.balance(&env.current_contract_address());
+
+            if actual_balance < expected_balance {
+                return Err(PaymentError::RevenueInvariantViolated);
             }
         }
-    }
-
-    let current_revenue = storage::get_event_revenue(env, event_id);
-
-    if total_payments
-        != current_revenue + total_refunds + total_withdrawn + platform_revenue + total_disputed
-    {
-        return Err(PaymentError::AccountingMismatch);
     }
 
     Ok(())
@@ -982,6 +975,7 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
         storage::add_total_refunds(&env, &payment.event_id, refund_amt);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, refund_amt);
 
         // Refund event preserves the original payment's privacy level: the
         // identity exposed is derived from the stored record, never re-derived
@@ -1122,6 +1116,7 @@ impl PaymentsContract {
         }
 
         storage::add_total_withdrawn(&env, &event_id, organizer_amount);
+        storage::add_total_token_withdrawn(&env, &event_id, &payout_token, organizer_amount);
         config.organizer_withdrawn = true;
         storage::set_event_config(&env, &event_id, &config);
 
@@ -1259,6 +1254,7 @@ impl PaymentsContract {
             token_revenue - remaining,
         );
         storage::add_total_refunds(&env, &payment.event_id, remaining);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, remaining);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1375,6 +1371,7 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
         storage::add_total_refunds(&env, &payment.event_id, refund_amt);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, refund_amt);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1458,6 +1455,12 @@ impl PaymentsContract {
                     };
                     storage::add_withdrawal_record(&env, &event_id, &record);
                     storage::add_total_withdrawn(&env, &event_id, token_total);
+                    storage::add_total_token_withdrawn(
+                        &env,
+                        &event_id,
+                        &token_address,
+                        token_total,
+                    );
 
                     total += token_total;
                 }
@@ -1533,6 +1536,7 @@ impl PaymentsContract {
         storage::set_event_revenue(&env, &event_id, current_event_revenue - revenue);
 
         storage::add_total_withdrawn(&env, &event_id, organizer_amount);
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, organizer_amount);
 
         // Latch the event as settled so the organizer path can no longer withdraw.
         if let Some(config) = config.as_mut() {
@@ -1778,6 +1782,7 @@ impl PaymentsContract {
         storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
 
         storage::add_total_withdrawn(&env, &event_id, total);
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, total);
 
         let record = WithdrawalRecord {
             amount: total,
@@ -1831,6 +1836,7 @@ impl PaymentsContract {
 
                 storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
                 storage::add_total_withdrawn(&env, &event_id, total);
+                storage::add_total_token_withdrawn(&env, &event_id, &token_address, total);
 
                 let current_event_revenue = storage::get_event_revenue(&env, &event_id);
                 storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
@@ -1985,6 +1991,7 @@ impl PaymentsContract {
         };
         storage::add_withdrawal_record(&env, &event_id, &record);
         storage::add_total_withdrawn(&env, &event_id, share);
+        storage::add_total_token_withdrawn(&env, &event_id, &settlement.token, share);
 
         events::emit_revenue_withdrawn(
             &env,
@@ -2099,6 +2106,7 @@ impl PaymentsContract {
                     organizer: primary,
                 };
                 storage::add_total_withdrawn(&env, &event_id, share);
+                storage::add_total_token_withdrawn(&env, &event_id, &settlement.token, share);
                 storage::add_withdrawal_record(&env, &event_id, &record);
 
                 events::emit_flagged_share_resolved(&env, event_id, recipient, false, share);

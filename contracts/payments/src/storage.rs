@@ -116,6 +116,8 @@ pub enum DataKey {
     PayerPaymentIndex(Address, u64),
     PayerPaymentsCount(Address),
     EventTokenVolume(Symbol, Address),
+    TotalTokenRefunds(Symbol, Address),
+    TotalTokenWithdrawn(Symbol, Address),
     /// Indexed storage for owner tickets
     OwnerTicketIndex(Address, u64),
     OwnerTicketsCount(Address),
@@ -1188,6 +1190,41 @@ pub fn get_total_token_volume(env: &Env, event_id: &Symbol, token: &Address) -> 
 pub fn add_total_token_volume(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
     let current = get_total_token_volume(env, event_id, token);
     let key = DataKey::EventTokenVolume(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_refunds(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalTokenRefunds(event_id.clone(), token.clone()))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_refunds(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_refunds(env, event_id, token);
+    let key = DataKey::TotalTokenRefunds(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_withdrawn(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalTokenWithdrawn(
+            event_id.clone(),
+            token.clone(),
+        ))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_withdrawn(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_withdrawn(env, event_id, token);
+    let key = DataKey::TotalTokenWithdrawn(event_id.clone(), token.clone());
     env.storage().persistent().set(&key, &(current + amount));
     env.storage()
         .persistent()
