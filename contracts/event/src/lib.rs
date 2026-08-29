@@ -979,15 +979,45 @@ impl EventContract {
         let index = tier_index.ok_or(EventError::TierNotFound)?;
         let tier = event.tiers.get(index).ok_or(EventError::TierNotFound)?;
 
-        if event.max_tickets_per_user > 0 && count > event.max_tickets_per_user {
-            return Err(EventError::InvalidInput);
+        // A pending reservation holds exactly one seat in this tier. If the
+        // attendee has one, it must be for this tier and unexpired, and it is
+        // consumed (not left dangling) by this batch purchase -- otherwise
+        // `tier.reserved` would never be released and the tier's sellable
+        // capacity would shrink permanently.
+        let has_res = storage::has_reservation(&env, &event_id, &attendee);
+        if has_res {
+            let reservation = storage::get_reservation(&env, &event_id, &attendee)?;
+            if reservation.expires_at < env.ledger().timestamp() {
+                return Err(EventError::ReservationExpired);
+            }
+            if reservation.tier_id != tier_id {
+                return Err(EventError::InvalidInput);
+            }
+        }
+
+        let ticket_contract = storage::get_ticket_contract(&env)?;
+        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
+
+        if event.max_tickets_per_user > 0 {
+            let existing_tickets = count_user_event_tickets(&ticket_client, &attendee, &event_id);
+            if existing_tickets + count > event.max_tickets_per_user {
+                return Err(EventError::InvalidInput);
+            }
         }
 
         if event.sold_count + count > event.max_supply {
             return Err(EventError::EventSoldOut);
         }
 
-        if tier.sold + tier.reserved + count > tier.capacity {
+        // The reserved seat (if any) is already counted in `tier.reserved` and
+        // is being consumed by this same purchase, so it must not also be
+        // charged against remaining capacity via `count`.
+        let reserved = if has_res {
+            tier.reserved.saturating_sub(1)
+        } else {
+            tier.reserved
+        };
+        if tier.sold + reserved + count > tier.capacity {
             return Err(EventError::TierSoldOut);
         }
 
@@ -1009,7 +1039,6 @@ impl EventContract {
         }
 
         let payments_contract = storage::get_payments_contract(&env)?;
-        let ticket_contract = storage::get_ticket_contract(&env)?;
 
         if tier.price > 0 {
             let payments_client = PaymentsContractClient::new(&env, &payments_contract);
@@ -1028,7 +1057,6 @@ impl EventContract {
             );
         }
 
-        let ticket_client = TicketContractClient::new(&env, &ticket_contract);
         let _ticket_ids =
             ticket_client.batch_mint_ticket(&event.event_id, &event.organizer, &attendee, &count);
 
@@ -1043,8 +1071,15 @@ impl EventContract {
             storage::set_last_free_claim(&env, &event_id, &attendee, env.ledger().timestamp());
         }
 
+        if has_res {
+            storage::remove_reservation(&env, &event_id, &attendee);
+        }
+
         let mut updated_tier = tier.clone();
         updated_tier.sold += count;
+        if has_res {
+            updated_tier.reserved = updated_tier.reserved.saturating_sub(1);
+        }
         event.sold_count += count;
         event.tiers.set(index, updated_tier.clone());
         update_event(&env, &event_id, &event)?;
@@ -1536,6 +1571,25 @@ fn validate_revenue_splits(
 ) -> Result<(), EventError> {
     validation::validate_revenue_splits(splits, organizer)
         .map_err(|_| EventError::InvalidRevenueSplit)
+}
+
+/// Count how many tickets `attendee` already holds for `event_id`, across all
+/// tiers and regardless of status. Used to enforce `max_tickets_per_user`
+/// against the attendee's true existing balance rather than just the count
+/// requested in a single call.
+fn count_user_event_tickets(
+    ticket_client: &TicketContractClient,
+    attendee: &Address,
+    event_id: &Symbol,
+) -> u32 {
+    let mut count = 0u32;
+    for tid in ticket_client.get_tickets_by_owner(attendee).iter() {
+        let minted = ticket_client.get_ticket(&tid);
+        if minted.event_id == *event_id {
+            count += 1;
+        }
+    }
+    count
 }
 
 fn has_valid_ticket_for_event(
