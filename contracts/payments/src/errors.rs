@@ -80,4 +80,6 @@ pub enum PaymentError {
     InvalidDisputeReason = 50,
     /// Organizer cannot withdraw while disputes are active.
     ActiveDisputes = 51,
+    /// Token escrow balance invariant violated
+    RevenueInvariantViolated = 52,
 }

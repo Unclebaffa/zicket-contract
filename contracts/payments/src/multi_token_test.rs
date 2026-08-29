@@ -62,6 +62,8 @@ fn test_multi_token_payments() {
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
 
+    client.add_supported_token(&admin, &token2);
+
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
     let payment_id1 = client.pay_for_ticket(
@@ -130,6 +132,8 @@ fn test_multi_token_refund_updates_only_the_paid_token_bucket() {
 
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
+
+    client.add_supported_token(&admin, &token2);
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
 
@@ -182,6 +186,8 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
 
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
+
+    client.add_supported_token(&admin, &token2);
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
 
@@ -237,4 +243,87 @@ fn test_withdraw_uses_only_the_event_payout_token_revenue() {
     assert_eq!(client.get_event_revenue(&event_id), amount2);
     assert_eq!(token1_transfer_client.balance(&organizer), amount1);
     assert_eq!(token2_transfer_client.balance(&contract_id), amount2);
+}
+
+#[test]
+fn test_multi_token_auto_release_validates_all_tokens() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (admin, token1, token2, client, _contract_id, event_contract, token1_client, token2_client) =
+        setup_contract_with_two_tokens(&env);
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let organizer = Address::generate(&env);
+    let event_id = symbol_short!("EVENT1");
+    let amount1 = 100_000_000i128;
+    let amount2 = 200_000_000i128;
+
+    token1_client.mint(&admin, &amount1);
+    token2_client.mint(&admin, &amount2);
+
+    let token1_transfer_client = token::Client::new(&env, &token1);
+    let token2_transfer_client = token::Client::new(&env, &token2);
+    client.add_supported_token(&admin, &token2);
+    token1_transfer_client.transfer(&admin, &payer1, &amount1);
+    token2_transfer_client.transfer(&admin, &payer2, &amount2);
+
+    client.sync_event_config(
+        &event_contract,
+        &event_id,
+        &organizer,
+        &token1,
+        &true,
+        &false,
+        &0,
+        &0,
+        &0,
+        &1000,
+        &17280,
+        &0,
+        &None,
+        &false,
+    );
+
+    let _payment_id1 = client.pay_for_ticket(
+        &1,
+        &payer1,
+        &event_id,
+        &amount1,
+        &None,
+        &token1,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+    let _payment_id2 = client.pay_for_ticket(
+        &2,
+        &payer2,
+        &event_id,
+        &amount2,
+        &None,
+        &token2,
+        &PaymentPrivacy::Standard,
+        &None,
+        &None,
+    );
+
+    let event_end_time: u64 = env.ledger().timestamp() + 86_400;
+    client.set_event_end_time(&admin, &event_id, &organizer, &event_end_time);
+
+    env.ledger().with_mut(|li| {
+        li.timestamp = event_end_time + 1; // Past auto release deadline
+        li.sequence_number = 20000; // Past event_end_ledger (17280)
+    });
+
+    // This calls validate_revenue_invariant under the hood, and withdraws ALL tokens
+    // since auto_release handles all tracked event tokens.
+    client.release_if_expired(&event_id);
+
+    // Verify invariants worked: revenue should be fully withdrawn for both tokens
+    assert_eq!(client.get_event_token_revenue(&event_id, &token1), 0);
+    assert_eq!(client.get_event_token_revenue(&event_id, &token2), 0);
+    assert_eq!(client.get_event_revenue(&event_id), 0);
+    assert_eq!(token1_transfer_client.balance(&organizer), amount1);
+    assert_eq!(token2_transfer_client.balance(&organizer), amount2);
 }

@@ -226,34 +226,24 @@ fn process_timed_out_disputes(env: &Env, event_id: &Symbol) -> Result<(), Paymen
 }
 
 fn validate_revenue_invariant(env: &Env, event_id: &Symbol) -> Result<(), PaymentError> {
-    if let Some(EventStatus::Cancelled) = storage::get_event_status(env, event_id) {
-        return Ok(());
-    }
     process_timed_out_disputes(env, event_id)?;
 
-    let total_payments = storage::get_total_payments(env, event_id);
-    let total_refunds = storage::get_total_refunds(env, event_id);
-    let total_withdrawn = storage::get_total_withdrawn(env, event_id);
-    let platform_revenue = storage::get_platform_revenue(env, event_id);
+    let tokens = storage::get_event_tokens(env, event_id);
+    for i in 0..tokens.len() {
+        if let Some(token_address) = tokens.get(i) {
+            let total_payments = storage::get_total_token_volume(env, event_id, &token_address);
+            let total_refunds = storage::get_total_token_refunds(env, event_id, &token_address);
+            let total_withdrawn = storage::get_total_token_withdrawn(env, event_id, &token_address);
 
-    let mut total_disputed: i128 = 0;
-    let disputes = storage::get_event_disputes(env, event_id);
-    for i in 0..disputes.len() {
-        if let Some(ticket_id) = disputes.get(i) {
-            if let Some(dispute) = storage::get_dispute(env, ticket_id) {
-                if let Ok(payment) = storage::get_payment(env, dispute.payment_id) {
-                    total_disputed += payment.amount;
-                }
+            let expected_balance = total_payments - total_refunds - total_withdrawn;
+
+            let token_client = token::Client::new(env, &token_address);
+            let actual_balance = token_client.balance(&env.current_contract_address());
+
+            if actual_balance < expected_balance {
+                return Err(PaymentError::RevenueInvariantViolated);
             }
         }
-    }
-
-    let current_revenue = storage::get_event_revenue(env, event_id);
-
-    if total_payments
-        != current_revenue + total_refunds + total_withdrawn + platform_revenue + total_disputed
-    {
-        return Err(PaymentError::AccountingMismatch);
     }
 
     Ok(())
@@ -346,6 +336,10 @@ fn create_payment(env: Env, params: PaymentParams) -> Result<u64, PaymentError> 
         ) {
             return Err(PaymentError::EventNotActive);
         }
+    }
+
+    if !storage::is_supported_token(&env, &params.token_address) {
+        return Err(PaymentError::InvalidPayoutToken);
     }
 
     let contract_address = env.current_contract_address();
@@ -658,6 +652,20 @@ impl PaymentsContract {
 
     pub fn get_accepted_token(env: Env) -> Result<Address, PaymentError> {
         storage::get_accepted_token(&env)
+    }
+
+    pub fn add_supported_token(
+        env: Env,
+        admin: Address,
+        token: Address,
+    ) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let current_admin = storage::get_admin(&env)?;
+        if current_admin != admin {
+            return Err(PaymentError::Unauthorized);
+        }
+        storage::add_supported_token(&env, &token);
+        Ok(())
     }
 
     pub fn get_event_config(env: Env, event_id: Symbol) -> Result<EventConfig, PaymentError> {
@@ -982,6 +990,7 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
         storage::add_total_refunds(&env, &payment.event_id, refund_amt);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, refund_amt);
 
         // Refund event preserves the original payment's privacy level: the
         // identity exposed is derived from the stored record, never re-derived
@@ -1122,6 +1131,7 @@ impl PaymentsContract {
         }
 
         storage::add_total_withdrawn(&env, &event_id, organizer_amount);
+        storage::add_total_token_withdrawn(&env, &event_id, &payout_token, organizer_amount);
         config.organizer_withdrawn = true;
         storage::set_event_config(&env, &event_id, &config);
 
@@ -1259,6 +1269,7 @@ impl PaymentsContract {
             token_revenue - remaining,
         );
         storage::add_total_refunds(&env, &payment.event_id, remaining);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, remaining);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1375,6 +1386,7 @@ impl PaymentsContract {
             token_revenue - refund_amt,
         );
         storage::add_total_refunds(&env, &payment.event_id, refund_amt);
+        storage::add_total_token_refunds(&env, &payment.event_id, &payment.token, refund_amt);
 
         // The refund event derives its masked identity from the stored payment,
         // preserving the original privacy level.
@@ -1458,6 +1470,12 @@ impl PaymentsContract {
                     };
                     storage::add_withdrawal_record(&env, &event_id, &record);
                     storage::add_total_withdrawn(&env, &event_id, token_total);
+                    storage::add_total_token_withdrawn(
+                        &env,
+                        &event_id,
+                        &token_address,
+                        token_total,
+                    );
 
                     total += token_total;
                 }
@@ -1533,6 +1551,7 @@ impl PaymentsContract {
         storage::set_event_revenue(&env, &event_id, current_event_revenue - revenue);
 
         storage::add_total_withdrawn(&env, &event_id, organizer_amount);
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, organizer_amount);
 
         // Latch the event as settled so the organizer path can no longer withdraw.
         if let Some(config) = config.as_mut() {
@@ -1608,6 +1627,7 @@ impl PaymentsContract {
             &platform_revenue,
         );
 
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, platform_revenue);
         storage::reset_platform_revenue(&env, &event_id);
 
         events::emit_platform_revenue_withdrawn(
@@ -1697,15 +1717,22 @@ impl PaymentsContract {
                     total_payments += payment.amount;
                     total_refunds += payment.refunded_amount;
 
-                    // Add to EventTokenVolume
-                    let vol_key = crate::storage::DataKey::EventTokenVolume(
-                        event_id.clone(),
-                        payment.token.clone(),
+                    storage::add_total_token_volume(
+                        &env,
+                        &event_id,
+                        &payment.token,
+                        payment.amount,
                     );
-                    let mut current_vol: i128 =
-                        env.storage().persistent().get(&vol_key).unwrap_or(0);
-                    current_vol += payment.amount;
-                    env.storage().persistent().set(&vol_key, &current_vol);
+                    storage::add_event_token(&env, &event_id, &payment.token);
+
+                    if payment.refunded_amount > 0 {
+                        storage::add_total_token_refunds(
+                            &env,
+                            &event_id,
+                            &payment.token,
+                            payment.refunded_amount,
+                        );
+                    }
                 }
             }
         }
@@ -1714,12 +1741,21 @@ impl PaymentsContract {
         env.storage()
             .persistent()
             .set(&count_key, &(legacy_payments.len() as u64));
+        env.storage()
+            .persistent()
+            .extend_ttl(&count_key, TTL_THRESHOLD, TTL_BUMP);
 
         let tp_key = crate::storage::DataKey::TotalPayments(event_id.clone());
         env.storage().persistent().set(&tp_key, &total_payments);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tp_key, TTL_THRESHOLD, TTL_BUMP);
 
         let tr_key = crate::storage::DataKey::TotalRefunds(event_id.clone());
         env.storage().persistent().set(&tr_key, &total_refunds);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tr_key, TTL_THRESHOLD, TTL_BUMP);
 
         let history = storage::get_withdrawal_history(&env, &event_id);
         let mut total_withdrawn = 0;
@@ -1730,9 +1766,24 @@ impl PaymentsContract {
         }
         let tw_key = crate::storage::DataKey::TotalWithdrawn(event_id.clone());
         env.storage().persistent().set(&tw_key, &total_withdrawn);
+        env.storage()
+            .persistent()
+            .extend_ttl(&tw_key, TTL_THRESHOLD, TTL_BUMP);
+
+        let tokens = storage::get_event_tokens(&env, &event_id);
+        if total_withdrawn > 0 {
+            if tokens.len() > 1 {
+                return Err(PaymentError::AccountingMismatch);
+            }
+            if let Some(single_token) = tokens.get(0) {
+                storage::add_total_token_withdrawn(&env, &event_id, &single_token, total_withdrawn);
+            }
+        }
 
         // Remove legacy vector to free space
         env.storage().persistent().remove(&legacy_key);
+
+        validate_revenue_invariant(&env, &event_id)?;
 
         Ok(())
     }
@@ -1778,6 +1829,7 @@ impl PaymentsContract {
         storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
 
         storage::add_total_withdrawn(&env, &event_id, total);
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, total);
 
         let record = WithdrawalRecord {
             amount: total,
@@ -1831,6 +1883,7 @@ impl PaymentsContract {
 
                 storage::set_event_token_revenue(&env, &event_id, &token_address, 0);
                 storage::add_total_withdrawn(&env, &event_id, total);
+                storage::add_total_token_withdrawn(&env, &event_id, &token_address, total);
 
                 let current_event_revenue = storage::get_event_revenue(&env, &event_id);
                 storage::set_event_revenue(&env, &event_id, current_event_revenue - total);
@@ -1985,6 +2038,7 @@ impl PaymentsContract {
         };
         storage::add_withdrawal_record(&env, &event_id, &record);
         storage::add_total_withdrawn(&env, &event_id, share);
+        storage::add_total_token_withdrawn(&env, &event_id, &settlement.token, share);
 
         events::emit_revenue_withdrawn(
             &env,
@@ -2099,6 +2153,7 @@ impl PaymentsContract {
                     organizer: primary,
                 };
                 storage::add_total_withdrawn(&env, &event_id, share);
+                storage::add_total_token_withdrawn(&env, &event_id, &settlement.token, share);
                 storage::add_withdrawal_record(&env, &event_id, &record);
 
                 events::emit_flagged_share_resolved(&env, event_id, recipient, false, share);
@@ -2460,6 +2515,8 @@ impl PaymentsContract {
         payment.refunded_amount += remaining;
         payment.status = PaymentStatus::Refunded;
         storage::update_payment(&env, &payment)?;
+        storage::add_total_refunds(&env, &dispute.event_id, remaining);
+        storage::add_total_token_refunds(&env, &dispute.event_id, &payment.token, remaining);
 
         storage::remove_dispute(&env, ticket_id);
         let disputes = storage::get_event_disputes(&env, &dispute.event_id);
