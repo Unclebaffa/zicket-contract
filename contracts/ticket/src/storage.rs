@@ -31,6 +31,7 @@ pub enum DataKey {
     /// Indexed storage for event tickets
     EventTicketIndex(Symbol, u64),
     EventTicketsCount(Symbol),
+    AttendanceCredential(u64),
 }
 
 pub fn get_ticket(env: &Env, ticket_id: u64) -> Result<Ticket, TicketError> {
@@ -290,6 +291,25 @@ pub fn remove_recovery_key(env: &Env, ticket_id: u64) {
     env.storage()
         .persistent()
         .remove(&DataKey::RecoveryKey(ticket_id));
+}
+
+pub fn get_attendance_credential(env: &Env, ticket_id: u64) -> Option<BytesN<32>> {
+    let key = DataKey::AttendanceCredential(ticket_id);
+    let value = env.storage().persistent().get(&key);
+    if value.is_some() {
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+    }
+    value
+}
+
+pub fn set_attendance_credential(env: &Env, ticket_id: u64, hash: &BytesN<32>) {
+    let key = DataKey::AttendanceCredential(ticket_id);
+    env.storage().persistent().set(&key, hash);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
 }
 
 pub fn get_payments_contract(env: &Env) -> Result<Address, TicketError> {
