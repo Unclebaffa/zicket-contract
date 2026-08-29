@@ -5,10 +5,10 @@ use crate::types::{
 use soroban_sdk::{contracttype, Address, BytesN, Env, Symbol, Vec};
 
 /// TTL refresh threshold in ledgers (~30 days at 5s/ledger).
-const TTL_THRESHOLD: u32 = 518_400;
+pub const TTL_THRESHOLD: u32 = 518_400;
 /// TTL extension target in ledgers (~60 days at 5s/ledger), well within the
 /// network maximum of 3,110,400 ledgers.
-const TTL_BUMP: u32 = 1_036_800;
+pub const TTL_BUMP: u32 = 1_036_800;
 const CURRENT_VERSION: u32 = 1;
 /// Processed-nonce replay-protection entries: ~7-day/14-day ledger schedule.
 const NONCE_TTL_THRESHOLD: u32 = 120_960; // ~7 days at 5s/ledger
@@ -58,6 +58,7 @@ pub enum DataKey {
     Ticket(u64),
     EventRevenue(Symbol),
     EventTokenRevenue(Symbol, Address),
+    SupportedToken(Address),
     EventStatus(Symbol),
     /// Map-based: Individual event-payment relationship
     EventPayment(Symbol, u64),
@@ -116,6 +117,8 @@ pub enum DataKey {
     PayerPaymentIndex(Address, u64),
     PayerPaymentsCount(Address),
     EventTokenVolume(Symbol, Address),
+    TotalTokenRefunds(Symbol, Address),
+    TotalTokenWithdrawn(Symbol, Address),
     /// Indexed storage for owner tickets
     OwnerTicketIndex(Address, u64),
     OwnerTicketsCount(Address),
@@ -214,6 +217,24 @@ pub fn set_accepted_token(env: &Env, token: &soroban_sdk::Address) {
     env.storage()
         .persistent()
         .extend_ttl(&DataKey::AcceptedToken, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn add_supported_token(env: &Env, token: &soroban_sdk::Address) {
+    let key = DataKey::SupportedToken(token.clone());
+    env.storage().persistent().set(&key, &true);
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn is_supported_token(env: &Env, token: &soroban_sdk::Address) -> bool {
+    if let Ok(accepted) = get_accepted_token(env) {
+        if accepted == *token {
+            return true;
+        }
+    }
+    let key = DataKey::SupportedToken(token.clone());
+    env.storage().persistent().get(&key).unwrap_or(false)
 }
 
 pub fn get_event_contract(env: &Env) -> Result<soroban_sdk::Address, PaymentError> {
@@ -1188,6 +1209,41 @@ pub fn get_total_token_volume(env: &Env, event_id: &Symbol, token: &Address) -> 
 pub fn add_total_token_volume(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
     let current = get_total_token_volume(env, event_id, token);
     let key = DataKey::EventTokenVolume(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_refunds(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalTokenRefunds(event_id.clone(), token.clone()))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_refunds(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_refunds(env, event_id, token);
+    let key = DataKey::TotalTokenRefunds(event_id.clone(), token.clone());
+    env.storage().persistent().set(&key, &(current + amount));
+    env.storage()
+        .persistent()
+        .extend_ttl(&key, TTL_THRESHOLD, TTL_BUMP);
+}
+
+pub fn get_total_token_withdrawn(env: &Env, event_id: &Symbol, token: &Address) -> i128 {
+    env.storage()
+        .persistent()
+        .get(&DataKey::TotalTokenWithdrawn(
+            event_id.clone(),
+            token.clone(),
+        ))
+        .unwrap_or(0)
+}
+
+pub fn add_total_token_withdrawn(env: &Env, event_id: &Symbol, token: &Address, amount: i128) {
+    let current = get_total_token_withdrawn(env, event_id, token);
+    let key = DataKey::TotalTokenWithdrawn(event_id.clone(), token.clone());
     env.storage().persistent().set(&key, &(current + amount));
     env.storage()
         .persistent()

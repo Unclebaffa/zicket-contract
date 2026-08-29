@@ -86,5 +86,7 @@ pub enum PaymentError {
     /// Invalid reason code provided for dispute.
     InvalidDisputeReason = 324,
     /// Organizer cannot withdraw while disputes are active.
+    /// Organizer cannot withdraw while disputes are active.
     ActiveDisputes = 325,
-}
+    /// Token escrow balance invariant violated
+    RevenueInvariantViolated = 326,}

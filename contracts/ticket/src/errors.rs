@@ -33,4 +33,5 @@ pub enum TicketError {
     UnsupportedVersion = 122,      // CommonErrorCode::UnsupportedVersion
     RecoveryKeyNotFound = 3,       // CommonErrorCode::NotFound
     InvalidRecoverySignature = 24, // CommonErrorCode::InvalidInput
+    TicketNotUsed = 405,
 }

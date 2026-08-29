@@ -227,15 +227,36 @@ impl TicketContract {
             storage::TTL_THRESHOLD,
             storage::TTL_BUMP,
         );
+
+        let payload = (ticket.event_id.clone(), ticket_id, ticket.owner.clone()).to_xdr(&env);
+        let hash: soroban_sdk::BytesN<32> = env.crypto().sha256(&payload).into();
+        storage::set_attendance_credential(&env, ticket_id, &hash);
+
         events::emit_ticket_used(
             &env,
             ticket_id,
             ticket.event_id.clone(),
             ticket.owner.clone(),
         );
+        events::emit_attendance_credential_issued(
+            &env,
+            ticket_id,
+            ticket.event_id.clone(),
+            ticket.owner.clone(),
+            hash,
+        );
 
         Ok(())
     }
+
+    pub fn get_attendance_credential(env: Env, ticket_id: u64) -> Result<BytesN<32>, TicketError> {
+        let ticket = storage::get_ticket(&env, ticket_id)?;
+        if !ticket.is_used {
+            return Err(TicketError::TicketNotUsed);
+        }
+        storage::get_attendance_credential(&env, ticket_id).ok_or(TicketError::TicketNotUsed)
+    }
+
     pub fn get_ticket(env: Env, ticket_id: u64) -> Result<Ticket, TicketError> {
         storage::get_ticket(&env, ticket_id)
     }

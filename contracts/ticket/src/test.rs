@@ -664,3 +664,62 @@ fn test_mint_ticket_unauthorized_fails() {
     let result = client.try_mint_ticket(&event_id, &organizer, &owner);
     assert!(result.is_err());
 }
+
+#[test]
+fn test_attendance_credential_generation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
+
+    client.use_ticket(&organizer, &owner, &ticket_id);
+
+    let credential_hash = client.get_attendance_credential(&ticket_id);
+
+    // Verify hash manually
+    let event_id = Symbol::new(&env, "event_1");
+    let payload = (event_id, ticket_id, owner).to_xdr(&env);
+    let expected_hash: soroban_sdk::BytesN<32> = env.crypto().sha256(&payload).into();
+
+    assert_eq!(credential_hash, expected_hash);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #19)")]
+fn test_get_attendance_credential_unused() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let ticket_id = 1;
+
+    setup_test_ticket(
+        &env,
+        &contract_id,
+        &organizer,
+        &owner,
+        ticket_id,
+        TicketStatus::Valid,
+    );
+
+    // Should fail since ticket is unused
+    client.get_attendance_credential(&ticket_id);
+}
