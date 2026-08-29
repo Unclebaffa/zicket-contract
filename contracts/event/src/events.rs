@@ -4,7 +4,8 @@ use crate::types::{
     mask_address, CreateEventParams, Event, EventStatus, MaskedAddress, PrivacyLevel, ZkClaimType,
 };
 
-#[contractevent(data_format = "vec", topics = ["created"])]
+#[contractevent(data_format = "vec", topics = ["event_created"]
+)]
 pub struct EventCreated {
     pub event_id: Symbol,
     pub organizer: MaskedAddress,
@@ -15,7 +16,7 @@ pub struct EventCreated {
     pub created_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["updated"])]
+#[contractevent(data_format = "vec", topics = ["event_updated"])]
 pub struct EventUpdated {
     pub event_id: Symbol,
     pub name: soroban_sdk::String,
@@ -25,7 +26,7 @@ pub struct EventUpdated {
     pub updated_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["status"])]
+#[contractevent(data_format = "vec", topics = ["event_status_changed"])]
 pub struct EventStatusChanged {
     pub event_id: Symbol,
     pub old_status: EventStatus,
@@ -33,21 +34,21 @@ pub struct EventStatusChanged {
     pub changed_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["ev_cnc"])]
+#[contractevent(data_format = "vec", topics = ["event_cancelled"])]
 pub struct EventCancelled {
     pub event_id: Symbol,
     pub organizer: MaskedAddress,
     pub cancelled_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["refs_prc"])]
+#[contractevent(data_format = "vec", topics = ["refunds_processed"])]
 pub struct _RefundsProcessed {
     pub event_id: Symbol,
     pub refund_count: u32,
     pub processed_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["ev_pp"])]
+#[contractevent(data_format = "vec", topics = ["event_postponed"])]
 pub struct EventPostponed {
     pub event_id: Symbol,
     pub new_date_ledger: u64,
@@ -56,7 +57,7 @@ pub struct EventPostponed {
     pub postponed_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["ev_rsm"])]
+#[contractevent(data_format = "vec", topics = ["event_resumed"])]
 pub struct EventResumed {
     pub event_id: Symbol,
     pub new_start_ledger: u32,
@@ -64,7 +65,7 @@ pub struct EventResumed {
     pub resumed_at: u64,
 }
 
-#[contractevent(data_format = "vec", topics = ["register"])]
+#[contractevent(data_format = "vec", topics = ["event_registration"])]
 pub struct EventRegistration {
     pub event_id: Symbol,
     pub attendee: MaskedAddress,
@@ -170,7 +171,7 @@ pub fn emit_registration(
     .publish(env);
 }
 
-#[contractevent(data_format = "vec", topics = ["anon_reg"])]
+#[contractevent(data_format = "vec", topics = ["anon_event_registration"])]
 pub struct AnonEventRegistration {
     pub event_id: Symbol,
     pub tier_id: u32,
@@ -186,7 +187,7 @@ pub fn emit_anon_registration(env: &Env, event_id: &Symbol, tier_id: u32, ticket
     }
     .publish(env);
 }
-#[contractevent(data_format = "vec", topics = ["zk_attend"])]
+#[contractevent(data_format = "vec", topics = ["zk_verified_attendance"])]
 pub struct ZkVerifiedAttendance {
     pub event_id: Symbol,
     pub claim_type: ZkClaimType,
