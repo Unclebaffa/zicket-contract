@@ -1612,6 +1612,7 @@ impl PaymentsContract {
             &platform_revenue,
         );
 
+        storage::add_total_token_withdrawn(&env, &event_id, &token_address, platform_revenue);
         storage::reset_platform_revenue(&env, &event_id);
 
         events::emit_platform_revenue_withdrawn(
@@ -1710,6 +1711,19 @@ impl PaymentsContract {
                         env.storage().persistent().get(&vol_key).unwrap_or(0);
                     current_vol += payment.amount;
                     env.storage().persistent().set(&vol_key, &current_vol);
+
+                    if payment.refunded_amount > 0 {
+                        let refund_key = crate::storage::DataKey::TotalTokenRefunds(
+                            event_id.clone(),
+                            payment.token.clone(),
+                        );
+                        let mut current_token_refunds: i128 =
+                            env.storage().persistent().get(&refund_key).unwrap_or(0);
+                        current_token_refunds += payment.refunded_amount;
+                        env.storage()
+                            .persistent()
+                            .set(&refund_key, &current_token_refunds);
+                    }
                 }
             }
         }
@@ -1734,6 +1748,16 @@ impl PaymentsContract {
         }
         let tw_key = crate::storage::DataKey::TotalWithdrawn(event_id.clone());
         env.storage().persistent().set(&tw_key, &total_withdrawn);
+
+        if total_withdrawn > 0 {
+            if let Ok(payout_token) = storage::get_event_payout_token(&env, &event_id) {
+                let tw_token_key =
+                    crate::storage::DataKey::TotalTokenWithdrawn(event_id.clone(), payout_token);
+                env.storage()
+                    .persistent()
+                    .set(&tw_token_key, &total_withdrawn);
+            }
+        }
 
         // Remove legacy vector to free space
         env.storage().persistent().remove(&legacy_key);
@@ -2468,6 +2492,8 @@ impl PaymentsContract {
         payment.refunded_amount += remaining;
         payment.status = PaymentStatus::Refunded;
         storage::update_payment(&env, &payment)?;
+        storage::add_total_refunds(&env, &dispute.event_id, remaining);
+        storage::add_total_token_refunds(&env, &dispute.event_id, &payment.token, remaining);
 
         storage::remove_dispute(&env, ticket_id);
         let disputes = storage::get_event_disputes(&env, &dispute.event_id);
