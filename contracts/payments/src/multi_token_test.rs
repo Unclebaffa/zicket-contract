@@ -306,7 +306,7 @@ fn test_multi_token_auto_release_validates_all_tokens() {
 
     env.ledger().with_mut(|li| {
         li.timestamp = event_end_time + 1; // Past auto release deadline
-        li.sequence_number = 20000;        // Past event_end_ledger (17280)
+        li.sequence_number = 20000; // Past event_end_ledger (17280)
     });
 
     // This calls validate_revenue_invariant under the hood, and withdraws ALL tokens
