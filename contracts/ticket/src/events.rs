@@ -49,6 +49,15 @@ pub struct TicketRecovered {
     pub recovered_at: u64,
 }
 
+#[contractevent(data_format = "vec", topics = ["attendance_credential_issued"])]
+pub struct TicketAttendanceCredentialIssued {
+    pub ticket_id: u64,
+    pub event_id: Symbol,
+    pub owner: Address,
+    pub hash: soroban_sdk::BytesN<32>,
+    pub issued_at: u64,
+}
+
 pub fn emit_ticket_transferred(
     env: &Env,
     ticket_id: u64,
@@ -119,6 +128,23 @@ pub fn emit_ticket_recovered(env: &Env, ticket_id: u64, old_owner: Address, new_
         old_owner,
         new_owner,
         recovered_at: env.ledger().timestamp(),
+    }
+    .publish(env);
+}
+
+pub fn emit_attendance_credential_issued(
+    env: &Env,
+    ticket_id: u64,
+    event_id: Symbol,
+    owner: Address,
+    hash: soroban_sdk::BytesN<32>,
+) {
+    TicketAttendanceCredentialIssued {
+        ticket_id,
+        event_id,
+        owner,
+        hash,
+        issued_at: env.ledger().timestamp(),
     }
     .publish(env);
 }
