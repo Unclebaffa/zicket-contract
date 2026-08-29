@@ -264,6 +264,7 @@ fn test_multi_token_auto_release_validates_all_tokens() {
 
     let token1_transfer_client = token::Client::new(&env, &token1);
     let token2_transfer_client = token::Client::new(&env, &token2);
+    client.add_supported_token(&admin, &token2);
     token1_transfer_client.transfer(&admin, &payer1, &amount1);
     token2_transfer_client.transfer(&admin, &payer2, &amount2);
 
