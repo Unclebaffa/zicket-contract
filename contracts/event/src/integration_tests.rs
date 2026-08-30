@@ -1196,3 +1196,150 @@ fn test_resale_royalty_exceeding_proceeds_leaves_seller_unpaid() {
     let ticket = payments_client.get_ticket(&ticket_id);
     assert_eq!(ticket.owner, Some(buyer));
 }
+
+/// Wires up event/ticket/payments contracts (as in
+/// `test_registration_cross_contract_happy_path`) and creates a single free
+/// tier with `capacity` seats and `max_tickets_per_user` set as given, so
+/// batch-registration tests don't need to fund or transfer any token.
+fn setup_batch_world(
+    env: &Env,
+    capacity: u32,
+    max_tickets_per_user: u32,
+) -> (
+    EventContractClient<'_>,
+    ticket_contract::TicketContractClient<'_>,
+    Symbol,
+) {
+    let organizer = Address::generate(env);
+
+    let event_contract_id = env.register(EventContract, ());
+    let event_client = EventContractClient::new(env, &event_contract_id);
+
+    let ticket_contract_id = env.register(ticket_contract::TicketContract, ());
+    let ticket_client = ticket_contract::TicketContractClient::new(env, &ticket_contract_id);
+
+    let payments_contract_id = env.register(payments_contract::PaymentsContract, ());
+    let payments_client =
+        payments_contract::PaymentsContractClient::new(env, &payments_contract_id);
+
+    let token_admin = Address::generate(env);
+    let token_address = env
+        .register_stellar_asset_contract_v2(token_admin.clone())
+        .address();
+
+    let platform_wallet = Address::generate(env);
+    payments_client.initialize(
+        &organizer,
+        &token_address,
+        &0,
+        &platform_wallet,
+        &event_contract_id,
+    );
+    ticket_client.initialize(&organizer, &payments_contract_id);
+    event_client.initialize(&organizer, &ticket_contract_id, &payments_contract_id);
+
+    let event_id = Symbol::new(env, "evt_batch");
+    let params = CreateEventParams {
+        organizer: organizer.clone(),
+        payout_token: token_address.clone(),
+        event_id: event_id.clone(),
+        name: String::from_str(env, "Batch Registration Event"),
+        description: String::from_str(env, "Integration test event"),
+        venue: String::from_str(env, "Main Hall"),
+        event_date: env.ledger().timestamp() + 86_401,
+        initial_tiers: soroban_sdk::vec![
+            env,
+            TicketTierParams {
+                name: String::from_str(env, "Free"),
+                price: 0,
+                capacity,
+            },
+        ],
+        allow_anonymous: true,
+        requires_verification: false,
+        privacy_level: PrivacyLevel::Standard,
+        max_tickets_per_user,
+        event_start_ledger: 0,
+        event_end_ledger: 1000,
+        withdrawal_delay_ledgers: 17280,
+        revenue_splits: soroban_sdk::Vec::new(env),
+        resale_royalty_bps: 0,
+        max_resale_price: None,
+        allow_free_ticket_transfer: false,
+    };
+    event_client.create_event(&params);
+    event_client.update_event_status(&organizer, &event_id, &EventStatus::Active);
+
+    (event_client, ticket_client, event_id)
+}
+
+#[test]
+fn test_batch_register_consumes_active_reservation() {
+    let env = setup_env();
+    let attendee = Address::generate(&env);
+    let (event_client, ticket_client, event_id) = setup_batch_world(&env, 10, 0);
+
+    event_client.reserve_ticket(&attendee, &event_id, &0, &None);
+    let reserved_after_reserve = event_client
+        .get_event(&event_id)
+        .tiers
+        .get(0)
+        .unwrap()
+        .reserved;
+    assert_eq!(reserved_after_reserve, 1);
+
+    event_client.batch_register_for_event(&1, &attendee, &event_id, &0, &3, &false, &None);
+
+    let tier = event_client.get_event(&event_id).tiers.get(0).unwrap();
+    assert_eq!(tier.sold, 3);
+    // The reserved seat was consumed by this same purchase, not left dangling.
+    assert_eq!(tier.reserved, 0);
+
+    let attendee_tickets = ticket_client.get_tickets_by_owner(&attendee);
+    assert_eq!(attendee_tickets.len(), 3);
+    assert!(event_client.is_registered(&event_id, &attendee));
+}
+
+#[test]
+fn test_batch_register_rejects_expired_reservation() {
+    let env = setup_env();
+    let attendee = Address::generate(&env);
+    let (event_client, _ticket_client, event_id) = setup_batch_world(&env, 10, 0);
+
+    event_client.reserve_ticket(&attendee, &event_id, &0, &None);
+
+    // Reservations expire 900 seconds after creation.
+    env.ledger().with_mut(|li| {
+        li.timestamp += 901;
+    });
+
+    let result =
+        event_client.try_batch_register_for_event(&1, &attendee, &event_id, &0, &1, &false, &None);
+    assert_eq!(result.err(), Some(Ok(EventError::ReservationExpired)));
+}
+
+#[test]
+fn test_batch_register_enforces_max_tickets_per_user_across_calls() {
+    let env = setup_env();
+    let attendee = Address::generate(&env);
+    let (event_client, ticket_client, event_id) = setup_batch_world(&env, 10, 3);
+
+    // First call fills the cap exactly.
+    event_client.batch_register_for_event(&1, &attendee, &event_id, &0, &3, &false, &None);
+    assert_eq!(ticket_client.get_tickets_by_owner(&attendee).len(), 3);
+
+    // A second call with count == max_tickets_per_user must still be rejected
+    // because it ignores the attendee's existing balance -- this is the exact
+    // bypass the issue describes.
+    let result =
+        event_client.try_batch_register_for_event(&2, &attendee, &event_id, &0, &3, &false, &None);
+    assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
+
+    // Even a single additional ticket is rejected once the cap is reached.
+    let result =
+        event_client.try_batch_register_for_event(&3, &attendee, &event_id, &0, &1, &false, &None);
+    assert_eq!(result.err(), Some(Ok(EventError::InvalidInput)));
+
+    // No extra tickets were minted by the rejected attempts.
+    assert_eq!(ticket_client.get_tickets_by_owner(&attendee).len(), 3);
+}
