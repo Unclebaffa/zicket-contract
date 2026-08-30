@@ -699,7 +699,7 @@ fn test_attendance_credential_generation() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #19)")]
+#[should_panic(expected = "HostError: Error(Contract, #405)")]
 fn test_get_attendance_credential_unused() {
     let env = Env::default();
     env.mock_all_auths();

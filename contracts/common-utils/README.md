@@ -142,9 +142,14 @@ scheme built on `CommonErrorCode`:
 
 - Variants that match a `CommonErrorCode` category use that category's
   canonical number (documented on the variant with a `// CommonErrorCode::*`
-  comment), so the same discriminant carries the same meaning across
-  contracts. Same-category duplicates within one enum fill the remaining
-  slots of that category's band.
+  comment). Where a contract has only one variant in a given category, that
+  number carries the same meaning across contracts. Where a contract has
+  more than one variant in the same category, only the first uses the
+  canonical number -- further same-category variants fill the next free
+  slot in that category's band. Those slots identify the shared category
+  only (e.g. "this is a resource error"), not a specific universal error, so
+  decoding a duplicate-slot discriminant still requires the originating
+  contract or enum type to know which specific variant it is.
 - Variants with no common-category equivalent live in a contract-specific
   extension range with no overlap across contracts: `EventError` 200-299,
   `PaymentError` 300-399, `TicketError` 400-499.

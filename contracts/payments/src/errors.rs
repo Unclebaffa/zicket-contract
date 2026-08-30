@@ -5,12 +5,15 @@ use soroban_sdk::contracterror;
 /// Discriminants follow the unified numbering scheme shared by `EventError`,
 /// `PaymentError`, and `TicketError`: errors matching a category defined in
 /// `common_utils::errors::CommonErrorCode` use that category's canonical number
-/// (see the `// CommonErrorCode::*` comment on each such variant), with
-/// same-category duplicates packed into the remaining slots of that category's
-/// band. Errors with no common-category equivalent live in this contract's
-/// reserved extension range, 300-399 (event: 200-299, ticket: 400-499),
-/// so a raw discriminant alone identifies both its semantic category and,
-/// for domain-specific errors, its originating contract.
+/// (see the `// CommonErrorCode::*` comment on each such variant) when this
+/// contract has only one variant in that category. Same-category duplicates
+/// fill the remaining slots of that category's band -- those slots identify
+/// the shared category only, not a specific universal error, so decoding one
+/// still requires this enum's context. Errors with no common-category
+/// equivalent live in this contract's reserved extension range, 300-399
+/// (event: 200-299, ticket: 400-499), so a raw discriminant alone
+/// identifies its semantic category and, for domain-specific errors, its
+/// originating contract.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -89,4 +92,5 @@ pub enum PaymentError {
     /// Organizer cannot withdraw while disputes are active.
     ActiveDisputes = 325,
     /// Token escrow balance invariant violated
-    RevenueInvariantViolated = 326,}
+    RevenueInvariantViolated = 326,
+}
