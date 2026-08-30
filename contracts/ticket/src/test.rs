@@ -76,7 +76,7 @@ fn test_happy_path_transfer() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")]
+#[should_panic(expected = "HostError: Error(Contract, #403)")]
 fn test_transfer_used_ticket() {
     let env = Env::default();
     env.mock_all_auths();
@@ -99,7 +99,7 @@ fn test_transfer_used_ticket() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")]
+#[should_panic(expected = "HostError: Error(Contract, #403)")]
 fn test_transfer_cancelled_ticket() {
     let env = Env::default();
     env.mock_all_auths();
@@ -123,7 +123,7 @@ fn test_transfer_cancelled_ticket() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #12)")]
+#[should_panic(expected = "HostError: Error(Contract, #404)")]
 fn test_transfer_to_self() {
     let env = Env::default();
     env.mock_all_auths();
@@ -147,7 +147,7 @@ fn test_transfer_to_self() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #4)")]
+#[should_panic(expected = "HostError: Error(Contract, #11)")]
 fn test_unauthorized_transfer() {
     let env = Env::default();
     env.mock_all_auths();
@@ -233,7 +233,7 @@ fn test_use_ticket_happy_path() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #13)")]
+#[should_panic(expected = "HostError: Error(Contract, #43)")]
 fn test_use_ticket_double_checkin() {
     let env = Env::default();
     env.mock_all_auths();
@@ -264,7 +264,7 @@ fn test_use_ticket_double_checkin() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #4)")]
+#[should_panic(expected = "HostError: Error(Contract, #11)")]
 fn test_use_ticket_unauthorized() {
     let env = Env::default();
     env.mock_all_auths();
@@ -289,7 +289,7 @@ fn test_use_ticket_unauthorized() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #4)")]
+#[should_panic(expected = "HostError: Error(Contract, #11)")]
 fn test_use_ticket_wrong_owner_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -316,7 +316,7 @@ fn test_use_ticket_wrong_owner_rejected() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #14)")]
+#[should_panic(expected = "HostError: Error(Contract, #42)")]
 fn test_use_ticket_cancelled() {
     let env = Env::default();
     env.mock_all_auths();
@@ -340,7 +340,7 @@ fn test_use_ticket_cancelled() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")]
+#[should_panic(expected = "HostError: Error(Contract, #403)")]
 fn test_transfer_disabled_ticket() {
     let env = Env::default();
     env.mock_all_auths();
@@ -390,7 +390,7 @@ fn test_transfer_enabled_ticket() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #11)")]
+#[should_panic(expected = "HostError: Error(Contract, #403)")]
 fn test_transfer_used_ticket_via_is_used() {
     let env = Env::default();
     env.mock_all_auths();
@@ -419,7 +419,7 @@ fn test_transfer_used_ticket_via_is_used() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #13)")]
+#[should_panic(expected = "HostError: Error(Contract, #43)")]
 fn test_cancel_used_ticket_via_is_used() {
     let env = Env::default();
     env.mock_all_auths();
@@ -504,7 +504,7 @@ fn test_recover_ticket_invalid_signature() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #17)")]
+#[should_panic(expected = "HostError: Error(Contract, #3)")]
 fn test_recover_ticket_no_key_set() {
     let env = Env::default();
     env.mock_all_auths();
@@ -699,7 +699,7 @@ fn test_attendance_credential_generation() {
 }
 
 #[test]
-#[should_panic(expected = "HostError: Error(Contract, #19)")]
+#[should_panic(expected = "HostError: Error(Contract, #405)")]
 fn test_get_attendance_credential_unused() {
     let env = Env::default();
     env.mock_all_auths();

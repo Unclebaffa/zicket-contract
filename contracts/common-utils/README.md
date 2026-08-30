@@ -65,12 +65,14 @@ Standardized error codes and utilities for error handling:
 ### Adding to Your Contract
 
 1. Add dependency to `Cargo.toml`:
+
 ```toml
 [dependencies]
 common-utils = { path = "../common-utils" }
 ```
 
 2. Import in your contract:
+
 ```rust
 use common_utils::validation;
 use common_utils::revenue;
@@ -118,6 +120,7 @@ fn calculate_shares(
 ### Dust Handling
 
 The revenue share calculation uses a specific strategy to handle integer division dust:
+
 - Non-primary recipients receive `floor(net * bps / 10000)`
 - Primary organizer (index 0) receives the remainder
 - This ensures the sum of all shares always equals the net amount
@@ -126,6 +129,7 @@ The revenue share calculation uses a specific strategy to handle integer divisio
 ### Empty Split Safety
 
 For empty splits (legacy single-organizer mode):
+
 - `calculate_recipient_share()` requires an explicit organizer parameter
 - Only the organizer receives the full amount; other addresses receive 0
 - `calculate_all_shares()` returns a single entry with the organizer
@@ -133,19 +137,41 @@ For empty splits (legacy single-organizer mode):
 
 ### Error Code Standardization
 
-Contract-specific error enums retain their existing numeric codes for backward compatibility, but now include comments mapping to `CommonErrorCode` categories. This provides:
+`EventError`, `PaymentError`, and `TicketError` share a unified discriminant
+scheme built on `CommonErrorCode`:
+
+- Variants that match a `CommonErrorCode` category use that category's
+  canonical number (documented on the variant with a `// CommonErrorCode::*`
+  comment). Where a contract has only one variant in a given category, that
+  number carries the same meaning across contracts. Where a contract has
+  more than one variant in the same category, only the first uses the
+  canonical number -- further same-category variants fill the next free
+  slot in that category's band. Those slots identify the shared category
+  only (e.g. "this is a resource error"), not a specific universal error, so
+  decoding a duplicate-slot discriminant still requires the originating
+  contract or enum type to know which specific variant it is.
+- Variants with no common-category equivalent live in a contract-specific
+  extension range with no overlap across contracts: `EventError` 200-299,
+  `PaymentError` 300-399, `TicketError` 400-499.
+
+This provides:
+
 - Consistent error patterns for SDK integration
 - Human-readable error messages
-- No breaking changes to existing contracts
+- A raw discriminant that identifies its semantic category (and, for
+  domain-specific errors, its originating contract) without needing the
+  enum type
 
 ## Testing
 
 Run tests with:
+
 ```bash
 cargo test -p common-utils
 ```
 
 The test suite includes:
+
 - Basis points validation edge cases
 - Revenue split validation (empty, valid, invalid configurations)
 - Empty split safety (organizer-only, non-organizer, all-shares behavior)
@@ -156,6 +182,7 @@ The test suite includes:
 ## Future Enhancements
 
 Potential additions to this crate:
+
 - Privacy validation utilities (currently scattered across contracts)
 - Date/time validation helpers
 - Token transfer wrappers with standard error handling

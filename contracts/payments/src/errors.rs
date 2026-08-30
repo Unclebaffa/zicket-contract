@@ -2,84 +2,95 @@ use soroban_sdk::contracterror;
 
 /// Payment contract error codes.
 ///
-/// These errors follow common patterns defined in `common_utils::errors::CommonErrorCode`
-/// where applicable, but are numbered to avoid conflicts and maintain backward compatibility.
+/// Discriminants follow the unified numbering scheme shared by `EventError`,
+/// `PaymentError`, and `TicketError`: errors matching a category defined in
+/// `common_utils::errors::CommonErrorCode` use that category's canonical number
+/// (see the `// CommonErrorCode::*` comment on each such variant) when this
+/// contract has only one variant in that category. Same-category duplicates
+/// fill the remaining slots of that category's band -- those slots identify
+/// the shared category only, not a specific universal error, so decoding one
+/// still requires this enum's context. Errors with no common-category
+/// equivalent live in this contract's reserved extension range, 300-399
+/// (event: 200-299, ticket: 400-499), so a raw discriminant alone
+/// identifies its semantic category and, for domain-specific errors, its
+/// originating contract.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum PaymentError {
-    PaymentNotFound = 1,         // CommonErrorCode::NotFound
-    TicketNotFound = 2,          // CommonErrorCode::NotFound
-    InsufficientFunds = 3,       // CommonErrorCode::InsufficientFunds
-    Unauthorized = 4,            // CommonErrorCode::Unauthorized
-    PaymentAlreadyProcessed = 5, // CommonErrorCode::AlreadyProcessed
-    InvalidAmount = 6,           // CommonErrorCode::InvalidAmount
-    RefundFailed = 7,
-    NotInitialized = 8,         // CommonErrorCode::NotInitialized
-    PaymentAlreadyRefunded = 9, // CommonErrorCode::AlreadyProcessed
-    NoRevenue = 10,
-    AnonymousPaymentsDisabled = 11,
-    VerificationRequired = 12,
-    UnauthorizedWithdrawal = 13, // CommonErrorCode::Unauthorized
-    InvalidOrganizer = 14,
-    InvalidPayoutToken = 15,
-    EventNotActive = 16,    // CommonErrorCode::NotActive
-    EventNotCompleted = 17, // CommonErrorCode::NotCompleted
-    RefundNotAllowed = 18,
-    EscrowNotExpired = 19,
-    EscrowAlreadyReleased = 20, // CommonErrorCode::AlreadyProcessed
-    EscrowNotConfigured = 21,   // CommonErrorCode::NotConfigured
-    AccountingMismatch = 22,    // CommonErrorCode::AccountingMismatch
-    InvalidFeeBps = 23,         // CommonErrorCode::InvalidFeeBps
-    NoPlatformRevenue = 24,
-    DuplicateRequest = 25,
-    MigrationFailed = 26,    // CommonErrorCode::MigrationFailed
-    UnsupportedVersion = 27, // CommonErrorCode::UnsupportedVersion
-    MaxTicketsReached = 28,  // CommonErrorCode::MaxLimitReached
-    EventSoldOut = 29,       // CommonErrorCode::SoldOut
-    NonceRequired = 30,
-    ContractPaused = 31, // CommonErrorCode::ContractPaused
+    PaymentNotFound = 1,          // CommonErrorCode::NotFound
+    TicketNotFound = 2,           // CommonErrorCode::NotFound
+    InsufficientFunds = 81,       // CommonErrorCode::InsufficientFunds
+    Unauthorized = 11,            // CommonErrorCode::Unauthorized
+    PaymentAlreadyProcessed = 43, // CommonErrorCode::AlreadyProcessed
+    InvalidAmount = 22,           // CommonErrorCode::InvalidAmount
+    RefundFailed = 300,
+    NotInitialized = 61,         // CommonErrorCode::NotInitialized
+    PaymentAlreadyRefunded = 41, // CommonErrorCode::AlreadyProcessed
+    NoRevenue = 301,
+    AnonymousPaymentsDisabled = 302,
+    VerificationRequired = 303,
+    UnauthorizedWithdrawal = 12, // CommonErrorCode::Unauthorized
+    InvalidOrganizer = 304,
+    InvalidPayoutToken = 305,
+    EventNotActive = 42,    // CommonErrorCode::NotActive
+    EventNotCompleted = 44, // CommonErrorCode::NotCompleted
+    RefundNotAllowed = 306,
+    EscrowNotExpired = 307,
+    EscrowAlreadyReleased = 45, // CommonErrorCode::AlreadyProcessed
+    EscrowNotConfigured = 62,   // CommonErrorCode::NotConfigured
+    AccountingMismatch = 103,   // CommonErrorCode::AccountingMismatch
+    InvalidFeeBps = 24,         // CommonErrorCode::InvalidFeeBps
+    NoPlatformRevenue = 308,
+    DuplicateRequest = 309,
+    MigrationFailed = 121,    // CommonErrorCode::MigrationFailed
+    UnsupportedVersion = 122, // CommonErrorCode::UnsupportedVersion
+    MaxTicketsReached = 82,   // CommonErrorCode::MaxLimitReached
+    EventSoldOut = 83,        // CommonErrorCode::SoldOut
+    NonceRequired = 310,
+    ContractPaused = 101, // CommonErrorCode::ContractPaused
     /// Token transfer via the Soroban token interface failed unexpectedly.
-    TransferFailed = 32, // CommonErrorCode::TransferFailed
-    PostponementWindowClosed = 33,
-    EventNotPostponed = 34,
+    TransferFailed = 102, // CommonErrorCode::TransferFailed
+    PostponementWindowClosed = 311,
+    EventNotPostponed = 312,
     /// Revenue split configuration is invalid (bad sum, too many recipients,
     /// duplicate or empty recipient, or an attempt to mutate an existing config).
-    InvalidSplitConfig = 35, // CommonErrorCode::InvalidInput
+    InvalidSplitConfig = 21, // CommonErrorCode::InvalidInput
     /// No revenue split has been configured for this event.
-    SplitsNotConfigured = 36, // CommonErrorCode::NotConfigured
+    SplitsNotConfigured = 63, // CommonErrorCode::NotConfigured
     /// The caller is not one of the configured split recipients.
-    NotASplitRecipient = 37,
+    NotASplitRecipient = 313,
     /// This recipient has already withdrawn (or had reassigned) its split share.
-    SplitAlreadyWithdrawn = 38, // CommonErrorCode::AlreadyProcessed
+    SplitAlreadyWithdrawn = 46, // CommonErrorCode::AlreadyProcessed
     /// The recipient's share is frozen because the wallet has been flagged.
-    RecipientFlagged = 39,
+    RecipientFlagged = 314,
     /// The recipient is not currently flagged.
-    RecipientNotFlagged = 40,
+    RecipientNotFlagged = 315,
     /// A zkEmail commitment is already bound to this payment; commitments are
     /// write-once and cannot be overwritten.
-    CommitmentAlreadySet = 41, // CommonErrorCode::AlreadyProcessed
+    CommitmentAlreadySet = 47, // CommonErrorCode::AlreadyProcessed
     /// The payment is in a state that no longer accepts a commitment
     /// (e.g. it has been refunded).
-    CommitmentNotAllowed = 42,
+    CommitmentNotAllowed = 316,
     /// Anonymous payment is missing its required nullifier commitment
-    MissingNullifierCommitment = 43,
+    MissingNullifierCommitment = 317,
     /// Private payment is missing its required stealth delivery key
-    MissingStealthDeliveryKey = 44,
+    MissingStealthDeliveryKey = 318,
     /// The supplied privacy data does not match the declared privacy level
-    PrivacyLevelMismatch = 45,
+    PrivacyLevelMismatch = 319,
     /// The dispute window is closed or not open yet.
-    DisputeWindowClosed = 46,
+    DisputeWindowClosed = 320,
     /// A dispute already exists for this ticket.
-    DisputeAlreadyExists = 47,
+    DisputeAlreadyExists = 321,
     /// No dispute record was found for this ticket.
-    DisputeNotFound = 48,
+    DisputeNotFound = 322,
     /// The dispute resolution timeout has expired.
-    DisputeExpired = 49,
+    DisputeExpired = 323,
     /// Invalid reason code provided for dispute.
-    InvalidDisputeReason = 50,
+    InvalidDisputeReason = 324,
     /// Organizer cannot withdraw while disputes are active.
-    ActiveDisputes = 51,
+    /// Organizer cannot withdraw while disputes are active.
+    ActiveDisputes = 325,
     /// Token escrow balance invariant violated
-    RevenueInvariantViolated = 52,
+    RevenueInvariantViolated = 326,
 }
