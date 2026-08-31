@@ -723,3 +723,115 @@ fn test_get_attendance_credential_unused() {
     // Should fail since ticket is unused
     client.get_attendance_credential(&ticket_id);
 }
+
+#[test]
+fn test_batch_mint_ticket_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    let count = 8u32;
+    let ticket_ids = client.batch_mint_ticket(&event_id, &organizer, &owner, &count);
+    assert_eq!(ticket_ids.len(), 8);
+
+    for (i, ticket_id) in ticket_ids.iter().enumerate() {
+        assert_eq!(ticket_id, (i + 1) as u64);
+        let ticket = client.get_ticket(&ticket_id);
+        assert_eq!(ticket.event_id, event_id);
+        assert_eq!(ticket.organizer, organizer);
+        assert_eq!(ticket.owner, owner);
+        assert_eq!(ticket.status, TicketStatus::Valid);
+        assert!(ticket.is_transferable);
+        assert!(!ticket.is_used);
+    }
+
+    let owner_tickets = client.get_owner_tickets(&owner);
+    assert_eq!(owner_tickets.len(), 8);
+
+    let event_tickets = client.get_event_tickets(&event_id);
+    assert_eq!(event_tickets.len(), 8);
+}
+
+#[test]
+fn test_batch_mint_ticket_exceeds_max_batch_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    let count = MAX_BATCH_TICKET_MINT + 1; // 31
+    let result = client.try_batch_mint_ticket(&event_id, &organizer, &owner, &count);
+    assert_eq!(result, Err(Ok(TicketError::InvalidInput)));
+}
+
+#[test]
+fn test_batch_mint_ticket_zero_count_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    let result = client.try_batch_mint_ticket(&event_id, &organizer, &owner, &0);
+    assert_eq!(result, Err(Ok(TicketError::InvalidInput)));
+}
+
+#[test]
+fn test_batch_mint_ticket_simulation_and_budget() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    // Reset budget to default network limits
+    env.cost_estimate().budget().reset_default();
+
+    // Verify batch mint completes and stays well within Soroban CPU/memory budgets
+    let count = 8u32;
+    let ticket_ids = client.batch_mint_ticket(&event_id, &organizer, &owner, &count);
+    assert_eq!(ticket_ids.len(), 8);
+
+    let cpu = env.cost_estimate().budget().cpu_instruction_cost();
+    let mem = env.cost_estimate().budget().memory_bytes_cost();
+    assert!(cpu > 0);
+    assert!(mem > 0);
+    // Typical Soroban network limit is 100M CPU instructions and 40MB memory
+    assert!(cpu < 100_000_000);
+    assert!(mem < 40_000_000);
+}
+
+#[test]
+fn test_batch_mint_ticket_unauthorized_fails() {
+    let env = Env::default();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_1");
+
+    env.set_auths(&[]);
+    let result = client.try_batch_mint_ticket(&event_id, &organizer, &owner, &5);
+    assert!(result.is_err());
+}
