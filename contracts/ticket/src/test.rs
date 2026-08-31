@@ -1,7 +1,10 @@
 use super::*;
 use crate::storage::DataKey;
 use crate::types::{Ticket, TicketStatus};
-use soroban_sdk::{testutils::Address as _, vec, Address, Env, Symbol};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _},
+    vec, Address, Env, Symbol, TryFromVal, TryIntoVal, Val,
+};
 fn setup_test_ticket(
     env: &Env,
     contract_id: &Address,
@@ -738,6 +741,7 @@ fn test_batch_mint_ticket_success() {
 
     let count = 8u32;
     let ticket_ids = client.batch_mint_ticket(&event_id, &organizer, &owner, &count);
+    let published = env.events().all();
     assert_eq!(ticket_ids.len(), 8);
 
     for (i, ticket_id) in ticket_ids.iter().enumerate() {
@@ -756,6 +760,68 @@ fn test_batch_mint_ticket_success() {
 
     let event_tickets = client.get_event_tickets(&event_id);
     assert_eq!(event_tickets.len(), 8);
+
+    // Verify emitted ticket_minted events from batch_mint_ticket
+    let mut minted_events = soroban_sdk::Vec::new(&env);
+    for event in published.events().iter() {
+        let soroban_sdk::xdr::ContractEventBody::V0(body) = &event.body;
+        let is_minted = body.topics.iter().any(|t| {
+            if let soroban_sdk::xdr::ScVal::Symbol(sym) = t {
+                sym.0.as_slice() == b"ticket_minted"
+            } else {
+                false
+            }
+        });
+        if is_minted {
+            let data_val: Val = match Val::try_from_val(&env, &body.data) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let fields: soroban_sdk::Vec<Val> = match data_val.try_into_val(&env) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            minted_events.push_back(fields);
+        }
+    }
+    assert_eq!(minted_events.len(), 8);
+
+    for (i, fields) in minted_events.iter().enumerate() {
+        let expected_ticket_id = (i + 1) as u64;
+        let ev_ticket_id: u64 = fields.get(0).unwrap().try_into_val(&env).unwrap();
+        let ev_event_id: Symbol = fields.get(1).unwrap().try_into_val(&env).unwrap();
+        let ev_owner: Address = fields.get(2).unwrap().try_into_val(&env).unwrap();
+        let ev_organizer: Address = fields.get(3).unwrap().try_into_val(&env).unwrap();
+
+        assert_eq!(ev_ticket_id, expected_ticket_id);
+        assert_eq!(ev_event_id, event_id);
+        assert_eq!(ev_owner, owner);
+        assert_eq!(ev_organizer, organizer);
+    }
+}
+
+#[test]
+fn test_batch_mint_ticket_max_batch_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TicketContract, ());
+    let client = TicketContractClient::new(&env, &contract_id);
+
+    let organizer = Address::generate(&env);
+    let owner = Address::generate(&env);
+    let event_id = Symbol::new(&env, "event_max");
+
+    // Verify that the maximum allowed batch size (MAX_BATCH_TICKET_MINT = 8) executes successfully
+    let ticket_ids =
+        client.batch_mint_ticket(&event_id, &organizer, &owner, &MAX_BATCH_TICKET_MINT);
+    assert_eq!(ticket_ids.len(), MAX_BATCH_TICKET_MINT);
+
+    let owner_tickets = client.get_owner_tickets(&owner);
+    assert_eq!(owner_tickets.len(), MAX_BATCH_TICKET_MINT);
+
+    let event_tickets = client.get_event_tickets(&event_id);
+    assert_eq!(event_tickets.len(), MAX_BATCH_TICKET_MINT);
 }
 
 #[test]
@@ -770,7 +836,7 @@ fn test_batch_mint_ticket_exceeds_max_batch_fails() {
     let owner = Address::generate(&env);
     let event_id = Symbol::new(&env, "event_1");
 
-    let count = MAX_BATCH_TICKET_MINT + 1; // 31
+    let count = MAX_BATCH_TICKET_MINT + 1; // 9
     let result = client.try_batch_mint_ticket(&event_id, &organizer, &owner, &count);
     assert_eq!(result, Err(Ok(TicketError::InvalidInput)));
 }
@@ -807,9 +873,9 @@ fn test_batch_mint_ticket_simulation_and_budget() {
     env.cost_estimate().budget().reset_default();
 
     // Verify batch mint completes and stays well within Soroban CPU/memory budgets
-    let count = 8u32;
+    let count = MAX_BATCH_TICKET_MINT;
     let ticket_ids = client.batch_mint_ticket(&event_id, &organizer, &owner, &count);
-    assert_eq!(ticket_ids.len(), 8);
+    assert_eq!(ticket_ids.len(), MAX_BATCH_TICKET_MINT);
 
     let cpu = env.cost_estimate().budget().cpu_instruction_cost();
     let mem = env.cost_estimate().budget().memory_bytes_cost();
@@ -833,5 +899,5 @@ fn test_batch_mint_ticket_unauthorized_fails() {
 
     env.set_auths(&[]);
     let result = client.try_batch_mint_ticket(&event_id, &organizer, &owner, &5);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Err(soroban_sdk::InvokeError::Abort)));
 }

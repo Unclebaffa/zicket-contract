@@ -27,12 +27,15 @@ pub struct Ticket {
 /// - `DataKey::Ticket(ticket_id)`
 /// - `DataKey::OwnerTicket(owner, ticket_id)`
 /// - `DataKey::OwnerTicketIndex(owner, count)`
-/// - `DataKey::OwnerTicketsCount(owner)`
 /// - `DataKey::EventTicket(event_id, ticket_id)`
 /// - `DataKey::EventTicketIndex(event_id, count)`
-/// - `DataKey::EventTicketsCount(event_id)`
 ///
-/// In addition to `NextTicketId` and event emissions.
-/// Capping the batch at 30 keeps total persistent storage writes (~180 writes) safely
-/// within Soroban's ledger write limit of 200 operations per transaction.
-pub const MAX_BATCH_TICKET_MINT: u32 = 30;
+/// Shared batch storage updates:
+/// - `DataKey::OwnerTicketsCount(owner)`
+/// - `DataKey::EventTicketsCount(event_id)`
+/// - `DataKey::NextTicketId`
+///
+/// Total persistent storage writes for `N` tickets equal `(5 * N) + 3`.
+/// Capping the batch at 8 keeps total persistent storage writes (43 writes) and total
+/// footprint entries strictly within Soroban's invocation limits (50 write entries, 100 footprint entries).
+pub const MAX_BATCH_TICKET_MINT: u32 = 8;
